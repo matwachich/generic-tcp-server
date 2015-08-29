@@ -27,6 +27,26 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 #ce
 
+#cs
+Functions :
+_TCPSrv_Create
+_TCPSrv_SetCallbacks
+_TCPSrv_Destroy
+_TCPSrv_PeerInfo
+_TCPSrv_PeerRecvBufferSetLen
+_TCPSrv_PeersCount
+_TCPSrv_PeersArray
+_TCPSrv_PeersCycle
+_TCPSrv_PeersBroadcast
+_TCPSrv_PeerKick
+_TCPSrv_PeersKick
+_TCPSrv_PeerExtGet
+_TCPSrv_PeerExtSet
+_TCPSrv_PeerExtGetMap
+_TCPSrv_PeerExtSetMap
+_TCPSrv_Process
+#ce
+
 ; ===============================================================================================================================
 ; Internals
 
@@ -76,10 +96,17 @@ Const $__gSRV_hDllWinSock = DllOpen("Ws2_32.dll")
 Func _TCPSrv_Create($sIp, $iPort, $iMaxPeers = -1, $iMaxRecvBytes = 4096, $iIdleTimeout = -1, $iPeerCycleDelay = -1)
 	TCPStartup()
 	; ---
+	; maps that will hold peers and peers extended data
 	Local $mMap1[], $mMap2[]
 	; ---
+	; main server map
 	Local $aRet[]
+	; ---
+	; create listening socket
 	$aRet[$__gSRV_SOCKET]         = TCPListen($sIp, $iPort)
+	If $aRet[$__gSRV_SOCKET] <= 0 Then Return SetError(@error, @extended, Null)
+	; ---
+	; populate server map
 	$aRet[$__gSRV_MAXPEERS]       = $iMaxPeers
 	$aRet[$__gSRV_PEERMAXRECV]    = $iMaxRecvBytes
 	$aRet[$__gSRV_IDLETIMEOUT]    = $iIdleTimeout
@@ -92,8 +119,6 @@ Func _TCPSrv_Create($sIp, $iPort, $iMaxPeers = -1, $iMaxRecvBytes = 4096, $iIdle
 	$aRet[$__gSRV_ONRECEIVE]      = Null
 	$aRet[$__gSRV_ONERROR]        = Null
 	$aRet[$__gSRV_ONPEERCYCLE]    = Null
-	; ---
-	If $aRet[$__gSRV_SOCKET] <= 0 Then Return SetError(1, 0, Null)
 	; ---
 	Return $aRet
 EndFunc
@@ -113,9 +138,11 @@ EndFunc
 Func _TCPSrv_Destroy(ByRef $aServer)
 	If Not __tcpSrv_isServerValid($aServer) Then Return SetError(-1, 0, False)
 	; ---
+	; disconnect all peers
 	_TCPSrv_PeersKick($aServer)
-	_TCPSrv_Process($aServer)
+	_TCPSrv_Process($aServer) ; to call disconnect callbacks
 	; ---
+	; destroy server
 	TCPCloseSocket($aServer[$__gSRV_SOCKET])
 	$aServer = Null
 	; ---
@@ -194,10 +221,13 @@ Func _TCPSrv_PeerKick(ByRef $aServer, $hSock, $sError = Default)
 	Return TCPCloseSocket($hSock) == 1
 EndFunc
 
-Func _TCPSrv_PeersKick(ByRef $aServer)
+Func _TCPSrv_PeersKick(ByRef $aServer, $sError = Default)
 	If Not __tcpSrv_isServerValid($aServer) Then Return SetError(-1, 0, False)
 	; ---
 	For $hSock In $aServer[$__gSRV_DICTPEERS]
+		If $sError <> Default Then
+			$aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_DISCONNECTERROR] = String($sError)
+		EndIf
 		TCPCloseSocket($hSock)
 	Next
 	; ---
@@ -245,7 +275,10 @@ Func _TCPSrv_Process(ByRef $aServer)
 	Local $hSock = TCPAccept($aServer[$__gSRV_SOCKET])
 	If $hSock > 0 Then
 		If $aServer[$__gSRV_MAXPEERS] <= 0 Or UBound($aServer[$__gSRV_DICTPEERS]) < $aServer[$__gSRV_MAXPEERS] Then
+			; peer's remote address
 			Local $aSockAddr = __tcpSrv_socketGetAddr($hSock)
+			; ---
+			; peer's data map
 			Local $aPeer[]
 			$aPeer[$__gSRV_PEERDATA_IP]              = $aSockAddr[0]
 			$aPeer[$__gSRV_PEERDATA_PORT]            = $aSockAddr[1]
@@ -257,17 +290,19 @@ Func _TCPSrv_Process(ByRef $aServer)
 			$aPeer[$__gSRV_PEERDATA_DISCONNECTERROR] = ""
 			$aServer[$__gSRV_DICTPEERS][$hSock] = $aPeer
 			; ---
+			; peer's extended data map
 			Local $aExtData[]
 			$aServer[$__gSRV_DICTEXTDATA][$hSock] = $aExtData
 			; ---
 			If IsFunc($aServer[$__gSRV_ONCONNECT]) Then $aServer[$__gSRV_ONCONNECT]($aServer, $hSock)
 		Else
+			; server max peers reached
 			TCPCloseSocket($hSock)
-			If IsFunc($aServer[$__gSRV_ONERROR]) Then $aServer[$__gSRV_ONERROR]($aServer, $hSock, "server is full")
+			If IsFunc($aServer[$__gSRV_ONERROR]) Then $aServer[$__gSRV_ONERROR]($aServer, $hSock, "Disconnected (maximum peers count reached)")
 		EndIf
 	EndIf
 	; ---
-	; check peer cycle
+	; check peer cycle delay
 	Local $bPeerCycle = False
 	If $aServer[$__gSRV_PEERCYCLEDELAY] > 0 And TimerDiff($aServer[$__gSRV_PEERCYCLETIMER]) >= $aServer[$__gSRV_PEERCYCLEDELAY] Then
 		$aServer[$__gSRV_PEERCYCLETIMER] = TimerInit()
@@ -291,7 +326,7 @@ Func __tcpSrv_processRecv(ByRef $aServer, $hSock)
 	Local $bRecv = TCPRecv($hSock, $aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_MAXRECV], 1)
 	If @error Then
 		; set disconnect error message
-		If Not $aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_DISCONNECTERROR] Then
+		If Not $aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_DISCONNECTERROR] Then ; not set by _TCPSrv_Peer(s)Kick
 			If @error = -1 Or @error = -2 Then
 				$aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_DISCONNECTERROR] = "@error " & @error
 			Else
@@ -312,7 +347,8 @@ Func __tcpSrv_processRecv(ByRef $aServer, $hSock)
 		; clean maps
 		MapRemove($aServer[$__gSRV_DICTPEERS], $hSock)
 		MapRemove($aServer[$__gSRV_DICTEXTDATA], $hSock)
-		TCPCloseSocket($hSock) ; really usefull?
+		; ---
+		TCPCloseSocket($hSock) ; is it really usefull?
 	ElseIf $bRecv Or $aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_BUFFER] Then
 		; append to receive buffer
 		If $bRecv Then $aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_BUFFER] &= Binary($bRecv)
@@ -329,6 +365,7 @@ Func __tcpSrv_processRecv(ByRef $aServer, $hSock)
 		If $iConsumedBytes > 0 And $iConsumedBytes < $iBuffLen Then
 			$aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_BUFFER] = BinaryMid($aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_BUFFER], $iConsumedBytes)
 		ElseIf $iConsumedBytes >= $iBuffLen Then
+			; all bytes consumed => empty buffer
 			$aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_BUFFER] = Binary("")
 		EndIf
 		; ---
@@ -339,7 +376,7 @@ EndFunc
 Func __tcpSrv_processIdleTimeout(ByRef $aServer, $hSock)
 	If $aServer[$__gSRV_IDLETIMEOUT] > 0 And TimerDiff($aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_IDLETIMER]) > $aServer[$__gSRV_IDLETIMEOUT] Then
 		TCPCloseSocket($hSock)
-		$aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_DISCONNECTERROR] = "idle time out"
+		$aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_DISCONNECTERROR] = "Idle (timed-out)"
 	EndIf
 EndFunc
 
