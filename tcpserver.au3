@@ -201,14 +201,25 @@ Func _TCPSrv_PeersCycle(ByRef $aServer, $hProc, $vUserData = Null) ; $hProc(ByRe
 	Return True
 EndFunc
 
+Func _TCPSrv_PeerSend(ByRef $aServer, $hSock, $bData)
+	If Not __tcpSrv_isServerValid($aServer) Then Return SetError(-1, 0, False)
+	; ---
+	$aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_IDLETIMER] = TimerInit() ; reset idle timer
+	; ---
+	Return TCPSend($hSock, $bData) == BinaryLen($bData)
+EndFunc
+
 Func _TCPSrv_PeersBroadcast(ByRef $aServer, $bData)
 	If Not __tcpSrv_isServerValid($aServer) Then Return SetError(-1, 0, False)
 	; ---
+	Local $ret = True, $iDataLen = BinaryLen($bData)
 	For $hSock In MapKeys($aServer[$__gSRV_DICTPEERS])
-		TCPSend($hSock, $bData)
+		$aServer[$__gSRV_DICTPEERS][$hSock][$__gSRV_PEERDATA_IDLETIMER] = TimerInit() ; reset idle timer
+		; ---
+		$ret = (TCPSend($hSock, $bData) == $iDataLen)
 	Next
 	; ---
-	Return True
+	Return $ret
 EndFunc
 
 Func _TCPSrv_PeerKick(ByRef $aServer, $hSock, $sError = Default)
