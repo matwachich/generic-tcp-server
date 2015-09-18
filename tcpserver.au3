@@ -1,6 +1,3 @@
-#include-once
-#include <Date.au3>
-
 #cs
 Simple, flexible, reusable, multi-clients TCP server
 
@@ -46,6 +43,8 @@ _TCPSrv_PeerExtGetMap
 _TCPSrv_PeerExtSetMap
 _TCPSrv_Process
 #ce
+
+#include-once
 
 ; ===============================================================================================================================
 ; Internals
@@ -294,7 +293,7 @@ Func _TCPSrv_Process(ByRef $aServer)
 			$aPeer[$__gSRV_PEERDATA_IP]              = $aSockAddr[0]
 			$aPeer[$__gSRV_PEERDATA_PORT]            = $aSockAddr[1]
 			$aPeer[$__gSRV_PEERDATA_IPPORT]          = $aSockAddr[0] & ":" & $aSockAddr[1]
-			$aPeer[$__gSRV_PEERDATA_CONNTIME]        = _NowCalc()
+			$aPeer[$__gSRV_PEERDATA_CONNTIME]        = @YEAR & "/" & @MON & "/" & @MDAY & " " & @HOUR & ":" & @MIN & ":" & @SEC
 			$aPeer[$__gSRV_PEERDATA_IDLETIMER]       = TimerInit()
 			$aPeer[$__gSRV_PEERDATA_MAXRECV]         = $aServer[$__gSRV_PEERMAXRECV]
 			$aPeer[$__gSRV_PEERDATA_BUFFER]          = Binary("")
