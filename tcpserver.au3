@@ -1,5 +1,6 @@
 #cs
 Simple, flexible, reusable, multi-clients TCP server
+AutoIt version: 3.3.15.0 beta
 
 The MIT License (MIT)
 
@@ -55,7 +56,7 @@ _TCPSrv_Process
 ;~ 	The onReceive() callback is called each time there is some data in the buffer.
 ;~ 	In the callback function, the user must use (consume) some/all data in the buffer.
 ;~ 	The user is not obliged to use all the data. So he must returns from the callback the amount of data he used (consumed) from the buffer,
-;~   so that this data will be discarded and not passed on the next call.
+;~   so this data will be discarded and not passed on the next call.
 ;~	The user can return special values :
 ;~ 		0 => no data used
 ;~ 		-1 => all data has been used (same as BinaryLen($bData))
@@ -92,11 +93,8 @@ Const $__gSRV_hDllWinSock = DllOpen("Ws2_32.dll")
 ; ===============================================================================================================================
 ; Base functions
 
-Func _TCPSrv_Create($sIp, $iPort, $iMaxPeers = -1, $iMaxRecvBytes = 4096, $iIdleTimeout = -1, $iPeerCycleDelay = -1)
+Func _TCPSrv_Create($sIp, $iPort, $iMaxPeers = -1, $iMaxRecvBytes = 4096, $iIdleTimeout = 0, $iPeerCycleDelay = 0)
 	TCPStartup()
-	; ---
-	; maps that will hold peers and peers extended data
-	Local $mMap1[], $mMap2[]
 	; ---
 	; main server map
 	Local $aRet[]
@@ -104,6 +102,9 @@ Func _TCPSrv_Create($sIp, $iPort, $iMaxPeers = -1, $iMaxRecvBytes = 4096, $iIdle
 	; create listening socket
 	$aRet[$__gSRV_SOCKET]         = TCPListen($sIp, $iPort)
 	If $aRet[$__gSRV_SOCKET] <= 0 Then Return SetError(@error, @extended, Null)
+	; ---
+	; maps that will hold peers and peers extended data
+	Local $mMap1[], $mMap2[]
 	; ---
 	; populate server map
 	$aRet[$__gSRV_MAXPEERS]       = $iMaxPeers
